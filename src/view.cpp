@@ -83,7 +83,8 @@ void print_record_row(const Record& r) {
                   cp866_display_field(r.date, sizeof(r.date)));
 }
 
-void print_page(const Database& db, size_t page, size_t pages, const std::string& title) {
+void print_page(const Database& db, size_t page, size_t pages,
+                const std::string& title, bool sorted_view) {
     clear_screen();
     print_top();
     print_line(title);
@@ -93,7 +94,7 @@ void print_page(const Database& db, size_t page, size_t pages, const std::string
     size_t start = page * kPageSize;
     size_t end = std::min(start + kPageSize, db.size());
     for (size_t i = start; i < end; ++i)
-        print_record_row(db.at(i));
+        print_record_row(sorted_view ? db.at(i) : db.source_at(i));
     print_mid();
     print_line("Страница " + std::to_string(page + 1) + "/" + std::to_string(pages)
         + " │ N-след │ Р-пред │ B-назад │ R-случайная │ I-по номеру │ A-вся БД");
@@ -117,17 +118,18 @@ void show_record(const Record& r, const std::string& title) {
     print_bottom();
 }
 
-void show_random(const Database& db) {
+void show_random(const Database& db, bool sorted_view) {
     if (db.size() == 0) {
         std::cout << "База данных пуста.\n";
         return;
     }
     size_t number = 1 + static_cast<size_t>(std::rand()) % db.size();
-    show_record(db.at(number - 1), "Случайная запись № " + std::to_string(number));
+    show_record(sorted_view ? db.at(number - 1) : db.source_at(number - 1),
+                "Случайная запись № " + std::to_string(number));
     pause();
 }
 
-void show_by_number(const Database& db) {
+void show_by_number(const Database& db, bool sorted_view) {
     std::cout << "Номер записи (1-" << db.size() << "): " << std::flush;
     std::string line;
     if (!std::getline(std::cin, line)) return;
@@ -139,12 +141,13 @@ void show_by_number(const Database& db) {
         pause();
         return;
     }
-    show_record(db.at(static_cast<size_t>(number) - 1),
+    show_record(sorted_view ? db.at(static_cast<size_t>(number) - 1)
+                            : db.source_at(static_cast<size_t>(number) - 1),
                 "Запись № " + std::to_string(number));
     pause();
 }
 
-void show_all(const Database& db, const std::string& title) {
+void show_all(const Database& db, const std::string& title, bool sorted_view) {
     clear_screen();
     print_top();
     print_line(title + " (вся)");
@@ -152,13 +155,12 @@ void show_all(const Database& db, const std::string& title) {
     print_header_row();
     print_mid();
     for (size_t i = 0; i < db.size(); ++i)
-        print_record_row(db.at(i));
+        print_record_row(sorted_view ? db.at(i) : db.source_at(i));
     print_bottom();
     pause();
 }
 
 char normalize_command(const std::string& input) {
-    if (input.empty()) return '\n';
     unsigned char c = static_cast<unsigned char>(input[0]);
     if (c >= 'A' && c <= 'Z') return static_cast<char>(c + ('a' - 'A'));
     if (c < 0x80) return static_cast<char>(c);
@@ -190,36 +192,37 @@ char normalize_command(const std::string& input) {
 void print_main_menu(size_t records, bool sorted) {
     clear_screen();
     print_top();
-    print_line("База данных «Населенный пункт»: " + std::to_string(records) + " записей");
+    print_line("База данных \"Населенный пункт\": " + std::to_string(records) + " записей");
     print_mid();
     print_line("1 - Исходная база данных");
-    print_line("2 - Отсортированная база данных" + std::string(sorted ? " (уже упорядочена)" : ""));
+    print_line("2 - Отсортированная база данных");
     print_line("0 - Выход");
     print_bottom();
 }
 
-void browse(const Database& db, const std::string& title) {
+void browse(const Database& db, const std::string& title, bool sorted_view) {
     size_t pages = (db.size() + kPageSize - 1) / kPageSize;
     if (pages == 0) pages = 1;
     size_t page = 0;
     for (;;) {
-        print_page(db, page, pages, title);
+        print_page(db, page, pages, title, sorted_view);
         std::cout << "Выбор: " << std::flush;
         std::string input;
         if (!std::getline(std::cin, input)) return;
+        if (input.empty()) continue;
         char cmd = normalize_command(input);
-        if (cmd == '\n' || cmd == 'n') {
+        if (cmd == 'n') {
             if (page + 1 < pages) ++page;
         } else if (cmd == 'p') {
             if (page > 0) --page;
         } else if (cmd == 'b' || cmd == 'x') {
             return;
         } else if (cmd == 'r') {
-            show_random(db);
+            show_random(db, sorted_view);
         } else if (cmd == 'i') {
-            show_by_number(db);
+            show_by_number(db, sorted_view);
         } else if (cmd == 'a') {
-            show_all(db, title);
+            show_all(db, title, sorted_view);
         } else {
             std::cout << "Неизвестная команда.\n";
             pause();
@@ -236,15 +239,16 @@ int run_app(Database& db) {
         std::cout << "Выбор: " << std::flush;
         std::string input;
         if (!std::getline(std::cin, input)) return 0;
+        if (input.empty()) continue;
         char cmd = normalize_command(input);
         if (cmd == '1') {
-            browse(db, "Исходная база данных");
+            browse(db, "Исходная база данных", false);
         } else if (cmd == '2') {
             if (!sorted) {
                 db.sort();
                 sorted = true;
             }
-            browse(db, "Отсортированная база данных");
+            browse(db, "Отсортированная база данных", true);
         } else if (cmd == '0') {
             return 0;
         } else {

@@ -10,6 +10,7 @@ public:
     void sort();
     size_t size() const { return records_.size(); }
     const Record& at(size_t i) const { return *index_[i]; }
+    const Record& source_at(size_t i) const { return records_[i]; }
 
 private:
     std::vector<Record> records_;
