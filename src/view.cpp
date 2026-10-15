@@ -254,7 +254,8 @@ void print_main_menu(size_t records, bool sorted) {
     print_line("База данных \"Населенный пункт\": " + std::to_string(records) + " записей");
     print_mid();
     print_line("1 - Исходная база данных");
-    print_line("2 - Отсортированная база данных");
+    print_line(sorted ? "2 - Отсортированная база данных — упорядочена"
+                      : "2 - Отсортированная база данных");
     print_line("0 - Выход");
     print_bottom();
 }
