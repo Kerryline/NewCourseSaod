@@ -11,6 +11,7 @@ public:
     size_t size() const { return records_.size(); }
     const Record& at(size_t i) const { return *index_[i]; }
     const Record& source_at(size_t i) const { return records_[i]; }
+    Record* const* index_data() const { return index_.data(); }
 
 private:
     std::vector<Record> records_;

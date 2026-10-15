@@ -1,6 +1,8 @@
 #include "view.hpp"
 #include "database.hpp"
 #include "encoding.hpp"
+#include "queue.hpp"
+#include "search.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
@@ -11,12 +13,13 @@ namespace {
 const size_t kPageSize = 20;
 const size_t kLeftPad = 2;
 const size_t kGap = 3;
-const size_t kFioWidth = 34;
+const size_t kNumWidth = 5;
+const size_t kFioWidth = 36;
 const size_t kStreetWidth = 18;
 const size_t kHouseWidth = 4;
 const size_t kAptWidth = 5;
 const size_t kDateWidth = 10;
-const size_t kInnerWidth = 85;
+const size_t kInnerWidth = 95;
 
 size_t utf8_width(const std::string& text) {
     size_t width = 0;
@@ -55,10 +58,12 @@ void print_line(const std::string& text) {
     std::cout << "║\n";
 }
 
-void print_columns(const std::string& fio, const std::string& street,
+void print_columns(const std::string& num, const std::string& fio, const std::string& street,
                    const std::string& house, const std::string& apt,
                    const std::string& date) {
     std::cout << "║" << std::string(kLeftPad, ' ');
+    print_field(num, kNumWidth);
+    std::cout << std::string(kGap, ' ');
     print_field(fio, kFioWidth);
     std::cout << std::string(kGap, ' ');
     print_field(street, kStreetWidth);
@@ -72,11 +77,12 @@ void print_columns(const std::string& fio, const std::string& street,
 }
 
 void print_header_row() {
-    print_columns("ФИО", "Улица", "Дом", "Кв", "Дата");
+    print_columns("№", "ФИО", "Улица", "Дом", "Кв", "Дата");
 }
 
-void print_record_row(const Record& r) {
-    print_columns(cp866_display_field(r.fio, sizeof(r.fio)),
+void print_record_row(const Record& r, size_t number) {
+    print_columns(std::to_string(number),
+                  cp866_display_field(r.fio, sizeof(r.fio)),
                   cp866_display_field(r.street, sizeof(r.street)),
                   std::to_string(r.house),
                   std::to_string(r.apartment),
@@ -94,10 +100,12 @@ void print_page(const Database& db, size_t page, size_t pages,
     size_t start = page * kPageSize;
     size_t end = std::min(start + kPageSize, db.size());
     for (size_t i = start; i < end; ++i)
-        print_record_row(sorted_view ? db.at(i) : db.source_at(i));
+        print_record_row(sorted_view ? db.at(i) : db.source_at(i), i + 1);
     print_mid();
-    print_line("Страница " + std::to_string(page + 1) + "/" + std::to_string(pages)
-        + " │ N-след │ Р-пред │ B-назад │ R-случайная │ I-по номеру │ A-вся БД");
+    std::string menu = "Страница " + std::to_string(page + 1) + "/" + std::to_string(pages)
+        + " │ N-след │ Р-пред │ B-назад │ R-случайная │ I-по номеру │ A-вся БД";
+    if (sorted_view) menu += " │ S-поиск";
+    print_line(menu);
     print_bottom();
 }
 
@@ -107,14 +115,14 @@ void pause() {
     std::getline(std::cin, dummy);
 }
 
-void show_record(const Record& r, const std::string& title) {
+void show_record(const Record& r, const std::string& title, size_t number) {
     clear_screen();
     print_top();
     print_line(title);
     print_mid();
     print_header_row();
     print_mid();
-    print_record_row(r);
+    print_record_row(r, number);
     print_bottom();
 }
 
@@ -125,7 +133,7 @@ void show_random(const Database& db, bool sorted_view) {
     }
     size_t number = 1 + static_cast<size_t>(std::rand()) % db.size();
     show_record(sorted_view ? db.at(number - 1) : db.source_at(number - 1),
-                "Случайная запись № " + std::to_string(number));
+                "Случайная запись № " + std::to_string(number), number);
     pause();
 }
 
@@ -143,7 +151,8 @@ void show_by_number(const Database& db, bool sorted_view) {
     }
     show_record(sorted_view ? db.at(static_cast<size_t>(number) - 1)
                             : db.source_at(static_cast<size_t>(number) - 1),
-                "Запись № " + std::to_string(number));
+                "Запись № " + std::to_string(number),
+                static_cast<size_t>(number));
     pause();
 }
 
@@ -155,9 +164,58 @@ void show_all(const Database& db, const std::string& title, bool sorted_view) {
     print_header_row();
     print_mid();
     for (size_t i = 0; i < db.size(); ++i)
-        print_record_row(sorted_view ? db.at(i) : db.source_at(i));
+        print_record_row(sorted_view ? db.at(i) : db.source_at(i), i + 1);
     print_bottom();
     pause();
+}
+
+void show_queue(const RecordQueue& q, const std::string& key) {
+    std::size_t found = q.size();
+    clear_screen();
+    print_top();
+    print_line("Очередь: ключ \"" + key + "\" — найдено " + std::to_string(found) + " записей");
+    print_mid();
+    if (found > 0) {
+        print_header_row();
+        print_mid();
+        const tLE* p = q.head();
+        std::size_t pos = 1;
+        while (p != nullptr) {
+            print_record_row(*p->data, pos);
+            p = p->next;
+            ++pos;
+        }
+        print_mid();
+    }
+    print_line(found == 0
+                   ? "Очередь пуста. Клавиша: B-назад"
+                   : "В очереди записей: " + std::to_string(found) + " │ B-назад");
+    print_bottom();
+    pause();
+}
+
+void run_search(const Database& db) {
+    std::cout << "Ключ (первые 3 буквы улицы): " << std::flush;
+    std::string line;
+    if (!std::getline(std::cin, line)) return;
+    size_t begin = line.find_first_not_of(" \t");
+    size_t end = line.find_last_not_of(" \t");
+    std::string display = (begin == std::string::npos) ? std::string() : line.substr(begin, end - begin + 1);
+    if (display.empty() || utf8_width(display) > 3) {
+        std::cout << "Ключ должен содержать от 1 до 3 букв.\n";
+        pause();
+        return;
+    }
+    std::string key = utf8_to_cp866(display);
+    if (key.empty()) {
+        std::cout << "Ключ не удалось преобразовать в кодировку базы.\n";
+        pause();
+        return;
+    }
+    RecordQueue q;
+    std::size_t first = find_first_prefix(db.index_data(), db.size(), key);
+    enqueue_prefix_matches(db.index_data(), db.size(), first, key, q);
+    show_queue(q, display);
 }
 
 char normalize_command(const std::string& input) {
@@ -183,6 +241,7 @@ char normalize_command(const std::string& input) {
                 case 0x442: return 't';
                 case 0x443: return 'y';
                 case 0x445: return 'x';
+                case 0x44B: return 's';
             }
         }
     }
@@ -223,6 +282,13 @@ void browse(const Database& db, const std::string& title, bool sorted_view) {
             show_by_number(db, sorted_view);
         } else if (cmd == 'a') {
             show_all(db, title, sorted_view);
+        } else if (cmd == 's') {
+            if (sorted_view) {
+                run_search(db);
+            } else {
+                std::cout << "Поиск доступен только в отсортированной базе.\n";
+                pause();
+            }
         } else {
             std::cout << "Неизвестная команда.\n";
             pause();

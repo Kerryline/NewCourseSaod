@@ -10,6 +10,8 @@ add_executable(saod
     src/heap_sort.cpp
     src/encoding.cpp
     src/database.cpp
+    src/queue.cpp
+    src/search.cpp
     src/view.cpp
 )
 
@@ -27,4 +29,13 @@ if(BUILD_TESTS)
     target_include_directories(heap_sort_tests PRIVATE include)
     target_compile_options(heap_sort_tests PRIVATE -Wall -Wextra)
     add_test(NAME heap_sort COMMAND heap_sort_tests)
+
+    add_executable(search_tests
+        tests/test_search.cpp
+        src/queue.cpp
+        src/search.cpp
+    )
+    target_include_directories(search_tests PRIVATE include)
+    target_compile_options(search_tests PRIVATE -Wall -Wextra)
+    add_test(NAME search COMMAND search_tests)
 endif()
